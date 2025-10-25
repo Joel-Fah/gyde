@@ -2,10 +2,12 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
@@ -28,7 +30,7 @@ class MessageBubble extends StatelessWidget {
     final maxWidth = MediaQuery.of(context).size.width * maxWidthFactor;
 
     if (isUserMessage) {
-      // Keep existing user bubble styling untouched
+      // Use theme containers so it looks right in both light and dark themes
       return Align(
         alignment: Alignment.centerRight,
         child: Container(
@@ -36,14 +38,15 @@ class MessageBubble extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 6.0),
           padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(16),
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(24),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (message.mediaFile != null) _buildMediaPreview(message.mediaFile!),
+              if (message.mediaFile != null)
+                _buildMediaPreview(message.mediaFile!),
               if (message.text != null && message.text!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6.0),
@@ -55,15 +58,6 @@ class MessageBubble extends StatelessWidget {
                     ),
                   ),
                 ),
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Text(
-                  formatFriendlyTime(message.timestamp),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
@@ -82,21 +76,15 @@ class MessageBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (message.mediaFile != null) _buildMediaPreview(message.mediaFile!),
+              if (message.mediaFile != null)
+                _buildMediaPreview(message.mediaFile!),
               if (message.text != null && message.text!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6.0),
                   child: _buildMarkdown(context, message.text!),
                 ),
-              // Align(
-              //   alignment: Alignment.bottomLeft,
-              //   child: Text(
-              //     formatFriendlyTime(message.timestamp),
-              //     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              //       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-              //     ),
-              //   ),
-              // ),
+              if (message.text != null && message.text!.trim().isNotEmpty)
+                _buildModelActions(context, message.text!.trim()),
             ],
           ),
         ),
@@ -107,7 +95,9 @@ class MessageBubble extends StatelessWidget {
   Widget _buildMarkdown(BuildContext context, String data) {
     final theme = Theme.of(context);
     final style = MarkdownStyleSheet.fromTheme(theme).copyWith(
-      p: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface),
+      p: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurface,
+      ),
       h1: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
       h2: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
       h3: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -125,15 +115,24 @@ class MessageBubble extends StatelessWidget {
         fontStyle: FontStyle.italic,
       ),
       blockquoteDecoration: BoxDecoration(
-        border: Border(left: BorderSide(color: theme.colorScheme.outline, width: 3)),
+        border: Border(
+          left: BorderSide(color: theme.colorScheme.outline, width: 3),
+        ),
       ),
       listBullet: theme.textTheme.bodyMedium,
       a: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary),
       horizontalRuleDecoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant, width: 1)),
+        border: Border(
+          bottom: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
+        ),
       ),
-      tableBorder: TableBorder.all(color: theme.colorScheme.outlineVariant, width: 0.6),
-      tableHead: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      tableBorder: TableBorder.all(
+        color: theme.colorScheme.outlineVariant,
+        width: 0.6,
+      ),
+      tableHead: theme.textTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w600,
+      ),
     );
 
     return MarkdownBody(
@@ -144,9 +143,14 @@ class MessageBubble extends StatelessWidget {
       onTapLink: (text, href, title) {
         // no-op for now; you can wire up url_launcher later
       },
-      imageBuilder: (uri, title, alt) => ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(uri.toString(), fit: BoxFit.cover),
+      sizedImageBuilder: (config) => ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Image.network(
+          config.uri.toString(),
+          fit: BoxFit.cover,
+          width: config.width,
+          height: config.height,
+        ),
       ),
       listItemCrossAxisAlignment: MarkdownListItemCrossAxisAlignment.start,
     );
@@ -161,10 +165,54 @@ class MessageBubble extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildModelActions(BuildContext context, String text) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final iconColor = colorScheme.onSurface.withValues(alpha: 0.8);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ActionIconButton(
+            tooltip: 'Copy',
+            icon: const HugeIcon(icon: HugeIcons.strokeRoundedCopy01, size: 18),
+            color: iconColor,
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              HapticFeedback.selectionClick();
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Copied to clipboard'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 1),
+                  backgroundColor: colorScheme.inverseSurface,
+                ),
+              );
+            },
+          ),
+          _ActionIconButton(
+            tooltip: 'Share',
+            icon: const HugeIcon(
+              icon: HugeIcons.strokeRoundedShare08,
+              size: 18,
+            ),
+            color: iconColor,
+            onPressed: () {
+              Share.share(text);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class MediaPreview extends StatefulWidget {
   final File file;
+
   const MediaPreview({super.key, required this.file});
 
   @override
@@ -188,7 +236,9 @@ class _MediaPreviewState extends State<MediaPreview> {
       _initVideoFuture = _videoController!.initialize().then((_) {
         if (mounted) setState(() {});
       });
-      _videoController!..setLooping(false)..setVolume(1.0);
+      _videoController!
+        ..setLooping(false)
+        ..setVolume(1.0);
     }
   }
 
@@ -244,6 +294,7 @@ class _MediaPreviewState extends State<MediaPreview> {
 
 class _PlayButtonOverlay extends StatefulWidget {
   final VideoPlayerController controller;
+
   const _PlayButtonOverlay({required this.controller});
 
   @override
@@ -290,7 +341,11 @@ class _PlayButtonOverlayState extends State<_PlayButtonOverlay> {
                   ),
                   child: const Padding(
                     padding: EdgeInsets.all(10.0),
-                    child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
+                    child: Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 40,
+                    ),
                   ),
                 ),
               ),
@@ -313,7 +368,8 @@ class ChatInputArea extends StatefulWidget {
   final VoidCallback onRemoveMedia;
   final FocusNode? focusNode;
 
-  const ChatInputArea({super.key,
+  const ChatInputArea({
+    super.key,
     required this.isExpanded,
     required this.onExpand,
     required this.textController,
@@ -360,7 +416,8 @@ class _ChatInputAreaState extends State<ChatInputArea>
           switchInCurve: Curves.easeOutQuart,
           switchOutCurve: Curves.easeInQuart,
           transitionBuilder: (child, animation) =>
-              SizeTransition(sizeFactor: animation, child: child),
+              ScaleTransition(scale: animation, child: child),
+          // SizeTransition(sizeFactor: animation, child: child),
           child: widget.isExpanded
               ? _buildExpandedInput(context)
               : _buildShrunkInput(context),
@@ -402,7 +459,10 @@ class _ChatInputAreaState extends State<ChatInputArea>
                   color: Theme.of(context).scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -410,9 +470,9 @@ class _ChatInputAreaState extends State<ChatInputArea>
                     const Gap(6),
                     Text(
                       'Tap to type...',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 14.0
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(fontSize: 14.0),
                     ),
                   ],
                 ).animate().scale(duration: 220.ms, curve: Curves.easeOutBack),
@@ -428,7 +488,8 @@ class _ChatInputAreaState extends State<ChatInputArea>
     return Column(
       key: const ValueKey('expandedInput'),
       children: [
-        if (widget.pickedMediaFile != null) _buildMediaAttachmentPreview(context),
+        if (widget.pickedMediaFile != null)
+          _buildMediaAttachmentPreview(context),
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -443,11 +504,17 @@ class _ChatInputAreaState extends State<ChatInputArea>
                 controller: widget.textController,
                 minLines: 1,
                 maxLines: 5,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText: 'Type your message...',
                   filled: true,
                   fillColor: Theme.of(context).scaffoldBackgroundColor,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
@@ -459,7 +526,9 @@ class _ChatInputAreaState extends State<ChatInputArea>
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: widget.textController,
               builder: (context, value, _) {
-                final hasContent = value.text.trim().isNotEmpty || widget.pickedMediaFile != null;
+                final hasContent =
+                    value.text.trim().isNotEmpty ||
+                    widget.pickedMediaFile != null;
                 return AnimatedScale(
                   scale: hasContent ? 1.0 : 0.98,
                   duration: 200.ms,
@@ -499,7 +568,10 @@ class _ChatInputAreaState extends State<ChatInputArea>
               child: IconButton(
                 iconSize: 14,
                 padding: EdgeInsets.zero,
-                icon: const HugeIcon(icon: HugeIcons.strokeRoundedCancel01, color: Colors.white),
+                icon: const HugeIcon(
+                  icon: HugeIcons.strokeRoundedCancel01,
+                  color: Colors.white,
+                ),
                 onPressed: widget.onRemoveMedia,
               ),
             ),
@@ -507,5 +579,31 @@ class _ChatInputAreaState extends State<ChatInputArea>
         ],
       ),
     ).animate().slide(begin: const Offset(0, 0.5)).fadeIn();
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  final Widget icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final Color color;
+
+  const _ActionIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: IconTheme(
+        data: IconThemeData(color: color, size: 18),
+        child: icon,
+      ),
+    );
   }
 }

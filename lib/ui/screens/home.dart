@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:gap/gap.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:promptu/models/chat_message.dart';
+import '../../api/ai_service.dart';
+import '../../models/chat_message.dart';
 import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import '../widgets/home_page_widgets.dart';
@@ -31,31 +33,43 @@ class _HomePageState extends State<HomePage> {
 
   bool _isInputBarExpanded = true;
   File? _pickedMediaFile;
-  bool _isProgrammaticScroll =
-      false; // guard to prevent shrink during auto scroll
-  // Opacity for the big top title that fades as you scroll away from the top.
-  double _topTitleOpacity = 0.0;
+  bool _isProgrammaticScroll = false; // guard to prevent shrink during auto scroll
+  double _topTitleOpacity = 0.0; // Opacity for big top title
+
+  // Model generation shimmer flag
+  bool _isGenerating = false;
+
+  // Demo seed control
+  static const bool _enableDemoSeed = false;
+
+  // Quick-start suggestions shown when no user messages yet
+  static const List<String> _suggestions = [
+    'What is GDG and how does GDG Yaoundé fit in?',
+    'How can I join GDG Yaoundé and stay updated?',
+    'When is the next GDG Yaoundé meetup or DevFest in Cameroon?',
+    'Who are the organizers of GDG Yaoundé and how do I reach them?',
+    'How do I become a speaker at a GDG Yaoundé event?',
+    'Share the GDG Code of Conduct and community guidelines.',
+    'List active GDG chapters in Cameroon with their links.',
+    'Give me a recap of the last GDG Yaoundé event.',
+    'Where can I find GDG Yaoundé on social media?',
+    'How can I volunteer or help organize GDG Yaoundé events?',
+    'What programs does GDG run (Study Jams, I/O Extended, DevFest)?',
+    'Tips for first-time attendees at a GDG Yaoundé meetup.',
+  ];
+
+  bool get _hasUserMessages => _messages.any((m) => m.sender == MessageSender.user);
+
+  late final AIService _aiService;
 
   @override
   void initState() {
     super.initState();
-    _addInitialMessage();
-    // Seed many messages shortly after the initial frame to test scrolling.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _seedSampleMessages());
-  }
-
-  void _addInitialMessage() {
-    Future.delayed(const Duration(milliseconds: 300), () {
-      setState(() {
-        _messages.add(
-          ChatMessage(
-            text:
-                "Hello! I'm Promptu. Ask me anything or send an image or video!",
-            sender: MessageSender.model,
-          ),
-        );
-      });
-    });
+    _aiService = AIService();
+    // Removed initial model message to keep empty state truly empty
+    if (_enableDemoSeed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _seedSampleMessages());
+    }
   }
 
   void _seedSampleMessages() {
@@ -70,7 +84,6 @@ class _HomePageState extends State<HomePage> {
       'This is a pretty long paragraph intended to stress-test scrolling performance and bubble constraints. The max width should be respected and content should be readable with proper padding.',
       'Neat!',
       'Let’s add another message to make sure we have plenty of items in the list.',
-      // Markdown examples
       '# Heading 1\nSome paragraph text with a [link](https://example.com).',
       '## Heading 2\n- Bullet item A\n- Bullet item B\n- Bullet item C',
       '### Heading 3\n1. Ordered one\n2. Ordered two\n3. Ordered three',
@@ -81,7 +94,7 @@ class _HomePageState extends State<HomePage> {
     ];
 
     setState(() {
-      for (int i = 0; i < 60; i++) {
+      for (int i = 0; i < 24; i++) {
         final isUser = i % 2 == 0;
         final text = baseTexts[i % baseTexts.length];
         _messages.add(
@@ -109,8 +122,6 @@ class _HomePageState extends State<HomePage> {
     if (text.isEmpty && _pickedMediaFile == null) return;
 
     HapticFeedback.mediumImpact();
-
-    // Unfocus the TextField to dismiss the keyboard after sending
     FocusScope.of(context).unfocus();
 
     final newMessage = ChatMessage(
@@ -123,26 +134,44 @@ class _HomePageState extends State<HomePage> {
       _messages.add(newMessage);
       _textController.clear();
       _pickedMediaFile = null;
+      _isGenerating = true; // show shimmer while model responds
     });
 
-    // Smoothly scroll to bottom (no hero overlay)
     _scrollToBottom();
 
-    _simulateModelResponse();
+    // Kick off model generation
+    final prompt = newMessage.text ?? 'Please help based on the attached media.';
+    _generateModelResponse(prompt);
   }
 
-  void _simulateModelResponse() {
-    Future.delayed(const Duration(seconds: 1), () {
+  Future<void> _generateModelResponse(String prompt) async {
+    try {
+      final md = await _aiService.generate(prompt);
+      if (!mounted) return;
       setState(() {
         _messages.add(
           ChatMessage(
-            text: "This is a simulated response from the model.",
+            text: md.isEmpty ? '*(No content returned)*' : md,
             sender: MessageSender.model,
           ),
         );
+        _isGenerating = false;
       });
       _scrollToBottom();
-    });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage(
+            text: 'Sorry, I couldn\'t generate a response. Please try again.'
+                '\n\n> Error: ${e.runtimeType}',
+            sender: MessageSender.model,
+          ),
+        );
+        _isGenerating = false;
+      });
+      _scrollToBottom();
+    }
   }
 
   void _pickMedia() async {
@@ -208,9 +237,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _scrollToBottom({
-    Duration duration = const Duration(milliseconds: 300),
-  }) async {
+  Future<void> _scrollToBottom({ Duration duration = const Duration(milliseconds: 300), }) async {
     final completer = Completer<void>();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (_scrollController.hasClients) {
@@ -235,12 +262,9 @@ class _HomePageState extends State<HomePage> {
       setState(() => _isInputBarExpanded = true);
       HapticFeedback.lightImpact();
     }
-    // Smooth: first scroll to bottom, then focus to open keyboard
     await _scrollToBottom(duration: const Duration(milliseconds: 250));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _textFocusNode.requestFocus();
-      }
+      if (mounted) _textFocusNode.requestFocus();
     });
   }
 
@@ -255,6 +279,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.viewInsetsOf(context);
+    final hasUser = _hasUserMessages;
     return GestureDetector(
       onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
       child: Scaffold(
@@ -277,6 +302,7 @@ class _HomePageState extends State<HomePage> {
                 child: _buildChatList(viewInsets.bottom),
               ),
             ),
+            if (!hasUser) _buildEmptyStateOverlay(context),
             Positioned(
               left: 0,
               right: 0,
@@ -303,56 +329,49 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Keep chat list builder INSIDE the state class
   Widget _buildChatList(double keyboardInset) {
-    const double kBottomThreshold = 56.0; // normal near-bottom expansion
-    const double kDecelThreshold = 120.0; // slightly larger window on decel/overscroll
-    const double kTitleFadeRange = 220.0; // px from top within which title fades in
+    const double kBottomThreshold = 56.0;
+    const double kDecelThreshold = 120.0;
+    const double kTitleFadeRange = 220.0;
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         final metrics = notification.metrics;
         final double extentAfter = metrics.extentAfter;
 
-        // Update top title opacity based on how close we are to the very top.
         final double pixels = metrics.pixels;
         double newOpacity = 1.0 - (pixels / kTitleFadeRange);
-        if (newOpacity < 0) newOpacity = 0;
-        if (newOpacity > 1) newOpacity = 1;
-        // Reduce setState churn with a tiny deadband
+        newOpacity = newOpacity.clamp(0.0, 1.0);
         if ((newOpacity - _topTitleOpacity).abs() > 0.02) {
-          setState(() => _topTitleOpacity = newOpacity);
+          // Defer setState to avoid scheduling build during current frame
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if ((newOpacity - _topTitleOpacity).abs() > 0.01) {
+              setState(() => _topTitleOpacity = newOpacity);
+            }
+          });
         }
 
         if (_isProgrammaticScroll) {
-          if (extentAfter <= kBottomThreshold) {
-            _scheduleExpand(true);
-          }
+          if (extentAfter <= kBottomThreshold) _scheduleExpand(true);
           return false;
         }
         if (extentAfter <= kBottomThreshold) {
           _scheduleExpand(true);
           return false;
         }
-        if ((notification is ScrollEndNotification || notification is OverscrollNotification) &&
-            extentAfter <= kDecelThreshold) {
-          _scheduleExpand(true);
-          return false;
-        }
-        if (extentAfter > kDecelThreshold &&
-            (notification is ScrollUpdateNotification || notification is UserScrollNotification)) {
+        if (extentAfter > kDecelThreshold && (notification is ScrollUpdateNotification || notification is UserScrollNotification)) {
           _scheduleExpand(false);
         }
         return false;
       },
       child: ListView.builder(
         controller: _scrollController,
-        // Slight top padding; big header occupies top area itself
         padding: EdgeInsets.fromLTRB(16, 16, 16, 120 + keyboardInset),
-        itemCount: _messages.length + 1, // +1 for the top title header
+        itemCount: _messages.length + 1 + (_isGenerating ? 1 : 0),
         itemBuilder: (context, index) {
-          if (index == 0) {
-            return _buildTopTitleHeader(context);
-          }
+          if (index == 0) return _buildTopTitleHeader(context);
+          final lastIndex = _messages.length + 1;
+          if (_isGenerating && index == lastIndex) return _buildShimmerBubble(context);
           final message = _messages[index - 1];
           final isUser = message.sender == MessageSender.user;
           return MessageBubble(message: message)
@@ -374,7 +393,7 @@ class _HomePageState extends State<HomePage> {
 
     final fill = Paint()
       ..style = PaintingStyle.fill
-      ..color = color.withValues(alpha: 0.01);
+      ..color = color.withValues(alpha: 0.04);
 
     return IgnorePointer(
       child: AnimatedOpacity(
@@ -390,7 +409,7 @@ class _HomePageState extends State<HomePage> {
                 alignment: Alignment.center,
                 children: [
                   Text(
-                    'Promptu',
+                    'Gyde',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 72,
@@ -400,7 +419,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   Text(
-                    'Promptu',
+                    'Gyde',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 72,
@@ -412,6 +431,143 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShimmerBubble(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = theme.colorScheme.surfaceContainerHighest;
+    final onBase = theme.colorScheme.onSurface.withValues(alpha: 0.08);
+
+    Widget line(double width, double height) => Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: base,
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ).animate(onPlay: (c) => c.repeat())
+          .shimmer(duration: 1200.ms, color: onBase);
+
+    final screenW = MediaQuery.of(context).size.width;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: screenW * 0.9),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              line(screenW * 0.6, 12),
+              const SizedBox(height: 8),
+              line(screenW * 0.8, 12),
+              const SizedBox(height: 8),
+              line(screenW * 0.45, 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyStateOverlay(BuildContext context) {
+    final theme = Theme.of(context);
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        ignoring: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(0, 0, 0, 120 + viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // App name on empty state
+              Text(
+                'Gyde',
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.5,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+              const Gap(8),
+              Text(
+                "What can I help you with today?",
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const Gap(12),
+              _buildInfiniteSuggestionsStrip(context),
+              const Gap(8),
+              _buildInfiniteSuggestionsStrip(context),
+            ],
+          ).animate().fadeIn(duration: 300.ms, curve: Curves.easeOut),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfiniteSuggestionsStrip(BuildContext context) {
+    // Infinite horizontal scroll of suggestion chips by repeating the list.
+    return SizedBox(
+      height: 44,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        itemBuilder: (context, index) {
+          final s = _suggestions[index % _suggestions.length];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+            child: _SuggestionChip(
+              label: s,
+              onTap: () {
+                setState(() { _textController.text = s; });
+                _expandInputBar();
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SuggestionChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _SuggestionChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bolt_rounded, size: 16),
+              const SizedBox(width: 6),
+              Text(label, style: theme.textTheme.bodyMedium),
+            ],
           ),
         ),
       ),
