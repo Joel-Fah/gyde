@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1028490463027",
+    "project_id": "promptu-7b099",
+    "storage_bucket": "promptu-7b099.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1028490463027:android:7e8ddc053b24e8fbff6046",
+        "android_client_info": {
+          "package_name": "com.example.promptu"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCj00vXGVNrP4aQtmIAe3xv2nXUdM7HtRE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
