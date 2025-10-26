@@ -13,12 +13,16 @@ class ChatMessage {
   final MessageSender sender;
   final DateTime timestamp;
 
+  /// Whether this message represents an error (e.g., model/service failure).
+  final bool isError;
+
   ChatMessage({
     String? id,
     this.text,
     this.mediaFile,
     required this.sender,
     DateTime? timestamp,
+    this.isError = false,
   })  : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         timestamp = timestamp ?? DateTime.now(),
         assert(

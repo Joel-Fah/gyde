@@ -5,6 +5,7 @@ import 'dart:ui' show Paint, PaintingStyle, StrokeJoin;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import 'package:hugeicons/hugeicons.dart';
@@ -121,6 +122,8 @@ class _HomePageState extends State<HomePage> {
     final text = _textController.text.trim();
     if (text.isEmpty && _pickedMediaFile == null) return;
 
+    debugPrint('[HomePage] _sendMessage textLen=${text.length} hasMedia=${_pickedMediaFile != null}');
+
     HapticFeedback.mediumImpact();
     FocusScope.of(context).unfocus();
 
@@ -141,6 +144,7 @@ class _HomePageState extends State<HomePage> {
 
     // Kick off model generation
     final prompt = newMessage.text ?? 'Please help based on the attached media.';
+    debugPrint('[HomePage] Starting AI generation');
     _generateModelResponse(prompt);
   }
 
@@ -157,21 +161,45 @@ class _HomePageState extends State<HomePage> {
         );
         _isGenerating = false;
       });
+      debugPrint('[HomePage] AI generation success, mdLen=${md.length}');
       _scrollToBottom();
-    } catch (e) {
+    } catch (e, st) {
       if (!mounted) return;
+      debugPrint('[HomePage] AI generation error: $e\n$st');
       setState(() {
         _messages.add(
           ChatMessage(
-            text: 'Sorry, I couldn\'t generate a response. Please try again.'
-                '\n\n> Error: ${e.runtimeType}',
+            text: _friendlyErrorMessage(e),
             sender: MessageSender.model,
+            isError: true,
           ),
         );
         _isGenerating = false;
       });
       _scrollToBottom();
     }
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    // Map common exceptions to user-friendly messages
+    if (error is SocketException) {
+      return 'Network error. Please check your internet connection and try again.';
+    }
+    if (error is TimeoutException) {
+      return 'The AI service took too long to respond. Please try again in a moment.';
+    }
+    if (error is PlatformException) {
+      final code = error.code.isNotEmpty ? ' (code: ${error.code})' : '';
+      return 'A platform error occurred$code. Please try again.';
+    }
+    final type = error.runtimeType.toString();
+    if (type.contains('FirebaseException')) {
+      return 'A Firebase error occurred. Please verify your configuration and try again.';
+    }
+    if (type.contains('ServerException')) {
+      return 'The AI service is temporarily unavailable. Please try again shortly.';
+    }
+    return 'Sorry, I couldn\'t generate a response. Please try again.';
   }
 
   void _pickMedia() async {
@@ -311,15 +339,24 @@ class _HomePageState extends State<HomePage> {
                 padding: EdgeInsets.only(bottom: viewInsets.bottom),
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
-                child: ChatInputArea(
-                  isExpanded: _isInputBarExpanded,
-                  onExpand: () { _expandInputBar(); },
-                  textController: _textController,
-                  onSendMessage: _sendMessage,
-                  onAttachMedia: _pickMedia,
-                  pickedMediaFile: _pickedMediaFile,
-                  onRemoveMedia: () => setState(() => _pickedMediaFile = null),
-                  focusNode: _textFocusNode,
+                child: OrientationBuilder(
+                  builder: (context, orientation) {
+                    return ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: orientation == Orientation.portrait ? double.infinity : 900,
+                      ),
+                      child: ChatInputArea(
+                        isExpanded: _isInputBarExpanded,
+                        onExpand: () { _expandInputBar(); },
+                        textController: _textController,
+                        onSendMessage: _sendMessage,
+                        onAttachMedia: _pickMedia,
+                        pickedMediaFile: _pickedMediaFile,
+                        onRemoveMedia: () => setState(() => _pickedMediaFile = null),
+                        focusNode: _textFocusNode,
+                      ),
+                    );
+                  }
                 ),
               ),
             ),
