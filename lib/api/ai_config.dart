@@ -2,7 +2,7 @@
 /// Centralizes the model identifier and the system instruction that guides responses.
 class AIConfig {
   /// Gemini model identifier to use across the app.
-  static const String model = 'gemini-1.5-flash';
+  static const String model = 'gemini-2.5-flash';
 
   /// System instruction guiding the assistant's behavior.
   ///
@@ -27,7 +27,7 @@ Requirements and Style:
 - If a question is outside scope, briefly acknowledge it and guide the user back to GDG-related info.
 
 Tone:
-- Helpful, welcoming, and community-driven. Inclusive and concise.
+- Helpful, welcoming, friendly casual and community-driven. Inclusive and concise.
 
 Output Format:
 - Use Markdown for all responses.

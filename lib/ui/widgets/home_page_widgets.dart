@@ -29,6 +29,44 @@ class MessageBubble extends StatelessWidget {
     final maxWidthFactor = isUserMessage ? 0.75 : 0.90;
     final maxWidth = MediaQuery.of(context).size.width * maxWidthFactor;
 
+    // Error rendering path: show a gentle error container and no actions
+    if (message.isError) {
+      final bg = theme.colorScheme.errorContainer;
+      final fg = theme.colorScheme.onErrorContainer;
+      return Align(
+        alignment: isUserMessage ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          margin: const EdgeInsets.symmetric(vertical: 6.0),
+          padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2.0, right: 8.0),
+                child: Icon(Icons.error_outline_rounded, size: 18, color: fg),
+              ),
+              Expanded(
+                child: Text(
+                  message.text ?? 'An unexpected error occurred.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 15.5,
+                    color: fg,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (isUserMessage) {
       // Use theme containers so it looks right in both light and dark themes
       return Align(
